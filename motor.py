@@ -1,4 +1,5 @@
 from dynamixel_sdk import * # Uses Dynamixel SDK library
+import util
 
 # Dynamixel constants for X_SERIES
 ADDR_POSITION_P             = 84
@@ -23,6 +24,8 @@ ADDR_GOAL_POSITION          = 116
 LEN_GOAL_POSITION           = 4
 ADDR_PRESENT_POSITION       = 132
 LEN_PRESENT_POSITION        = 4
+ADDR_PRESENT_LOAD           = 126
+LEN_PRESENT_LOAD            = 2
 TORQUE_ENABLE               = 1     # Value for enabling the torque
 TORQUE_DISABLE              = 0     # Value for disabling the torque
 
@@ -32,16 +35,19 @@ class DynamixelMotor:
     #Max position on a dynamixel before looping back to 0
     _vel_time_profile = 2000
     _acc_time_profile = 500
+    _pos_epsilon = 35 #~3 Degrees 
+    _load_threshold = 200 #20%
 
     #============================= DynamixelMotor Construction ==================================
-    def __init__(self, tuningParameters, portHandler, packetHandler, groupBulkWrite, groupBulkRead):
+    def __init__(self, tuningParameters, portHandler, packetHandler, groupBulkWrite, groupSyncReadPos, groupSyncReadLoad, errorCallback):
         """Initialize a connection to the robot with inverse kinematic control"""
 
         # Initialize DynamixelCommunication
         self._portHandler = portHandler
         self._packetHandler = packetHandler
         self._groupBulkWrite = groupBulkWrite
-        self._groupBulkRead = groupBulkRead
+        self._groupSyncReadPos = groupSyncReadPos
+        self._groupSyncReadLoad = groupSyncReadLoad
 
         # Intialize Motor Parameters
         self._dID = tuningParameters.id
@@ -58,6 +64,13 @@ class DynamixelMotor:
 
         self._radIntercept = tuningParameters.samples[0][0] - self._radsPerPos * tuningParameters.samples[0][1]
 
+        #Store error callback function
+        self._errorCallback = errorCallback
+
+        #Initialize memory for last commanded position
+        self.configureMotorReads()  # Setup read parameters to get motor position during initialization
+        self._lastCommandedPos = self.readMotorPos()
+
         self.setPositionPID()
         self.setPositionFF()
         self.setModes()
@@ -70,7 +83,7 @@ class DynamixelMotor:
         self.handleCommResponse(dxl_comm_result, command_string)
         self._groupBulkWrite.clearParam()
 
-    def handleCommResponse(self, comm_result, command_string, verbose = True):
+    def handleCommResponse(self, comm_result, command_string, verbose = False):
         """Handle the repeated logic of checking the result of a dynamixel communication, and printing success/failure with the given command string. Also returns True when the communication was successful."""
         if comm_result != COMM_SUCCESS:
             print('Dynamixel command failure: {} | {}'.format(command_string, self._packetHandler.getTxRxResult(comm_result)))
@@ -80,17 +93,16 @@ class DynamixelMotor:
     
     def configureMotorReads(self):
         """Initialize the groupBulkRead with all the parameters we want to read from the given dID"""
-        dxl_addparam_result = self._groupBulkRead.addParam(self._dID, ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION)
+        dxl_addparam_result = self._groupSyncReadPos.addParam(self._dID)
         if dxl_addparam_result != True:
-            print('Read param setting failed for dynamixel {}'.format(self._dID))
+            print('Read pos param setting failed for dynamixel {}'.format(self._dID))
         else:
-            print('Read params set for dynamixel {}'.format(self._dID))
-
-    def hasMotorFailed(self):
-        """Return whether or not this motor has hit an error"""
-        err = self._packetHandler.getLastRxPacketError()
-        #Or is it not sufficient to get the last error - should we fetch once more with self._packetHandler.readRx() instead?
-        return err != 0
+            print('Read pos param set for dynamixel {}'.format(self._dID))
+        dxl_addparam_result = self._groupSyncReadLoad.addParam(self._dID)
+        if dxl_addparam_result != True:
+            print('Read load param setting failed for dynamixel {}'.format(self._dID))
+        else:
+            print('Read load param set for dynamixel {}'.format(self._dID))
 
     #=========================== Motor Utilities ===========================================
     def toggleTorque(self, enable):
@@ -158,10 +170,37 @@ class DynamixelMotor:
     def posFromRad(self, rad):
         """Return the position value associated with the payload of this motor when at the given angle"""
         return int((rad - self._radIntercept)/self._radsPerPos)
+    
+    def getMotorMovementStatus(self):
+        """Returns the finished moving and under load threshold statuses of a single motor"""
+        #Worst case scenario by default, in case comms have failed
+        moving = True
+        underLoadThreshold = False
+        dxl_pos_result = self._groupSyncReadPos.isAvailable(self._dID, ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION)
+        if dxl_pos_result == True:
+            pos = util.convertPosToSigned(self._groupSyncReadPos.getData(self._dID, ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION))
+            moving = abs(self._lastCommandedPos - pos) > self._pos_epsilon
+        dxl_load_result = self._groupSyncReadLoad.isAvailable(self._dID, ADDR_PRESENT_LOAD, LEN_PRESENT_LOAD)
+        if dxl_load_result == True:
+            load = util.convertLoadToSigned(self._groupSyncReadLoad.getData(self._dID, ADDR_PRESENT_LOAD, LEN_PRESENT_LOAD))
+            underLoadThreshold = abs(load) < self._load_threshold
+        return moving, underLoadThreshold
+    
+    def fetchAndGetMotorMovementStatus(self):
+        """Returns the finished moving and under load threshold statuses of a single motor after a fresh fetch"""
+        dxl_comm_result = self._groupSyncReadPos.txRxPacket()
+        readSuccess = self.handleCommResponse(dxl_comm_result, 'Motor {} status (position) read'.format(self._dID))
+        dxl_comm_result = self._groupSyncReadLoad.txRxPacket()
+        readSuccess = readSuccess and self.handleCommResponse(dxl_comm_result, 'Motor {} status (load) read'.format(self._dID))
+        if readSuccess:
+            return self.getMotorMovementStatus()
+        #return worst case by default if comms have failed
+        return True, False
 
-    #=========================== Motor Position Control ===========================================
+    #=========================== Motor Control ===========================================
     def addMotorPosition(self, motorPos):
         """Adds a new position to the bulk writer for a single motor. Does not clear previous queued params"""
+        self._lastCommandedPos = motorPos
         param_goal_position = [DXL_LOBYTE(DXL_LOWORD(motorPos)), DXL_HIBYTE(DXL_LOWORD(motorPos)), DXL_LOBYTE(DXL_HIWORD(motorPos)), DXL_HIBYTE(DXL_HIWORD(motorPos))]
         self._groupBulkWrite.addParam(self._dID, ADDR_GOAL_POSITION, LEN_GOAL_POSITION, param_goal_position)
     
@@ -170,14 +209,37 @@ class DynamixelMotor:
         self.addMotorPosition(motorPos)
         self.sendAndClearBulkWrite('Motor {} position set to: {}'.format(self._dID, motorPos))
 
+    def safeSendMotorPosition(self, motorPos):
+        """Sends a new position for a single motor, and monitors for moving over the load threshold while achieving the position"""
+        self.sendMotorPosition(motorPos)
+        moving, underLoadThresh = self.fetchAndGetMotorMovementStatus()
+        while moving:
+            if not underLoadThresh:
+                self._errorCallback.__call__()
+            time.sleep(0.050)
+            moving, underLoadThresh = self.fetchAndGetMotorMovementStatus() 
+
     def readMotorPos(self):
         """Returns the position value read for a single motor. Can return None on comms fail."""
-        dxl_comm_result = self.groupBulkRead.txRxPacket()
+        dxl_comm_result = self._groupSyncReadPos.txRxPacket()
         readSuccess = self.handleCommResponse(dxl_comm_result, 'Motor {} position read'.format(self._dID))
         if readSuccess:
-            dxl_getdata_result = self._groupBulkRead.isAvailable(self._dID, ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION)
+            dxl_getdata_result = self._groupSyncReadPos.isAvailable(self._dID, ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION)
             if dxl_getdata_result == True:
-                return self._groupBulkRead.getData(self._dID, ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION)
+                return util.convertPosToSigned(self._groupSyncReadPos.getData(self._dID, ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION))
                 
         print('Motor {} position fetch failed'.format(self._dID))
         return None
+    
+    def readMotorLoad(self):
+        """Returns the load value read for a single motor. Can return None on comms fail."""
+        dxl_comm_result = self._groupSyncReadLoad.txRxPacket()
+        readSuccess = self.handleCommResponse(dxl_comm_result, 'Motor {} load read'.format(self._dID))
+        if readSuccess:
+            dxl_getdata_result = self._groupSyncReadLoad.isAvailable(self._dID, ADDR_PRESENT_LOAD, LEN_PRESENT_LOAD)
+            if dxl_getdata_result == True:
+                return util.convertLoadToSigned(self._groupSyncReadLoad.getData(self._dID, ADDR_PRESENT_LOAD, LEN_PRESENT_LOAD))
+                
+        print('Motor {} load fetch failed'.format(self._dID))
+        return None
+    

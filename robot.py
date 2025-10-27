@@ -6,6 +6,10 @@ import util
 # Dynamixel constants for X_SERIES
 BAUDRATE                    = 57600
 PROTOCOL_VERSION            = 2.0
+ADDR_PRESENT_POSITION       = 132
+LEN_PRESENT_POSITION        = 4
+ADDR_PRESENT_LOAD           = 126
+LEN_PRESENT_LOAD            = 2
 
 class Blackberry:
     """Class representing the blackberry robot and its joints and transforms"""
@@ -22,7 +26,6 @@ class Blackberry:
 
     # All joint values are internally represented in radians
     # Zeroed angle values represent the robot facing forward and pointing straight up
-
 
     # ========= Kinematic Members =========
 
@@ -67,9 +70,10 @@ class Blackberry:
         self._portHandler = PortHandler(usbPort)
         self._packetHandler = PacketHandler(PROTOCOL_VERSION)
 
-        # Initialize GroupBulk
+        # Initialize Writers and Readers
         self._groupBulkWrite = GroupBulkWrite(self._portHandler, self._packetHandler)
-        self._groupBulkRead = GroupBulkRead(self._portHandler, self._packetHandler)
+        self._groupSyncReadPos = GroupSyncRead(self._portHandler, self._packetHandler, ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION)
+        self._groupSyncReadLoad = GroupSyncRead(self._portHandler, self._packetHandler, ADDR_PRESENT_LOAD, LEN_PRESENT_LOAD)
 
         if useHardware:
             # Open port
@@ -94,7 +98,7 @@ class Blackberry:
         self._FK = eye(4)
         for i, jointConfig in enumerate(jointConfigs):
             if useHardware:
-                nextJoint = joint.Joint(i, self._q_trans[i], jointConfig['limits'], jointConfig['motors'], self._portHandler, self._packetHandler, self._groupBulkWrite, self._groupBulkRead)
+                nextJoint = joint.Joint(i, self._q_trans[i], jointConfig['limits'], jointConfig['motors'], self._portHandler, self._packetHandler, self._groupBulkWrite, self._groupSyncReadPos, self._groupSyncReadLoad, self.errorResponse)
                 if startWithTorque:
                     nextJoint.toggleActivate(True)
                 self._joints.append(nextJoint)
@@ -103,20 +107,11 @@ class Blackberry:
         #Initialize Gripper
         gripperConfig = config['arm']['gripper']
         if useHardware:
-            self._gripper = joint.Gripper(gripperConfig['limits'], gripperConfig['motor'], self._portHandler, self._packetHandler, self._groupBulkWrite, self._groupBulkRead)
+            self._gripper = joint.Gripper(gripperConfig['limits'], gripperConfig['motor'], self._portHandler, self._packetHandler, self._groupBulkWrite, self._groupSyncReadPos, self._groupSyncReadLoad, self.errorResponse)
             if startWithTorque:
                 self._gripper.toggleActivate(True)
-
-        
         
     #============================= Arm Helpers ==================================   
-    def sendPendingCommands(self):
-        """Send a groupBulkWrite pending packet of params, and handle logging the result with the given command string before clearing the groupBulkWrite"""
-        comm_result = self._groupBulkWrite.txPacket()
-        if comm_result != COMM_SUCCESS:
-            print('Robot command sending failed: {}'.format(self._packetHandler.getTxRxResult(comm_result)))
-        self._groupBulkWrite.clearParam()
-
     def toggleActivate(self, enableTorque):
         """Toggles the torque activation state for each joint and the gripper in this robot"""
         for _, joint in enumerate(self._joints):
@@ -146,13 +141,39 @@ class Blackberry:
 
     #============================= Arm Control ==================================
     def setJointAngles(self, q):
-        """Adds and sends commands to all motors given an array of joint angles"""
+        """Adds and sends commands to all motors synchronously given an array of joint angles"""
+        #Send an angle to each joint
         for ind, ang in enumerate(q):
             self._joints[ind].addPendingTheta(ang)
-        self.sendPendingCommands()
+
+        #Write all pending angles
+        comm_result = self._groupBulkWrite.txPacket()
+        if comm_result != COMM_SUCCESS:
+            print('Robot command sending failed: {}'.format(self._packetHandler.getTxRxResult(comm_result)))
+        self._groupBulkWrite.clearParam()
+        
+        #Monitor for safety and block until the angles are achieved
+        anglesAchieved = False
+        while not anglesAchieved:
+            anglesAchieved = True
+            dxl_comm_result = self._groupSyncReadPos.txRxPacket()
+            readSuccess = self.handleCommResponse(dxl_comm_result, 'Motor {} status (position) read'.format(self._dID))
+            dxl_comm_result = self._groupSyncReadLoad.txRxPacket()
+            readSuccess = readSuccess and self.handleCommResponse(dxl_comm_result, 'Motor {} status (load) read'.format(self._dID))
+            if not readSuccess:
+                self.errorResponse()
+                return
+            for _, joint in enumerate(self._joints):
+                jointMoving, jointUnderLoadThresh = joint.getJointMovementStatus()
+                if not jointUnderLoadThresh:
+                    self.errorResponse()
+                    return
+                #we can't break early because we still want to check the load of each joint
+                anglesAchieved = anglesAchieved and not jointMoving
+            time.sleep(0.05)
 
     def setIndividualJointAngles(self, q):
-        """Adds and sends commands to each motor given an array of joint angles"""
+        """Adds and sends commands to each motor one at a time given an array of joint angles"""
         for ind, ang in enumerate(q):
             self._joints[ind].sendToTheta(ang)
 
@@ -164,21 +185,8 @@ class Blackberry:
         return q
     
     def setJointAngle(self, qInd, theta):
-        """Adds and sends commands to one motors given a joint angles"""
+        """Adds and sends commands to one motor given a joint angle"""
         self._joints[qInd].sendToTheta(theta)
-    
-    def achievePose(self, q):
-        """Command a set of joint angles and wait until the pose is achieved within _epsilon"""
-        self.setJointAngles(self, q)
-        qPrime = self.readAllJointAngles()
-        poseAchieved = False
-        while poseAchieved:
-            poseAchieved = True
-            for i in range(q.len):
-                poseAchieved = poseAchieved and abs(q[i] - qPrime[i]) > self._epsilon
-                if not poseAchieved:
-                    time.sleep(0.1)
-                    break
 
     def getEE(self, q):
         """Get the homogeneous transform of the end effector in the base frame given an array of joint angles"""
@@ -189,6 +197,12 @@ class Blackberry:
                           self._q5: q[4],
                           self._q6: q[5]}
         return self._FK.evalf(subs=substituteDict)
+    
+    def errorResponse(self):
+        """Callback function invoked upon any arm joint encountering a run time error"""
+        print('ERROR: arm issue detected - attempting graceful shutdown.')
+        self.toggleActivate(False)
+        quit()
 
     #============================= Grip Control ==================================
     def setGripper(self, gripVal):

@@ -21,6 +21,7 @@ class MotorConfig:
     ff1: int = 0
 
 def getArmConfiguration():
+    """Get arm configuration from the local config file and unpack it into a dataclass"""
     with open('config.yml', 'r') as file:
         rawConfig = yaml.safe_load(file)
         newConfig = copy.deepcopy(rawConfig)
@@ -36,3 +37,19 @@ def getArmConfiguration():
         newConfig['arm']['gripper']['motor'] = MotorConfig(rawMotorConfig['id'], rawMotorConfig['samples'], rawMotorConfig['p'], rawMotorConfig['i'], rawMotorConfig['d'], rawMotorConfig['ff2'], rawMotorConfig['ff1'])
 
         return newConfig
+    
+def convertPosToSigned(n):
+    """Converts 2 byte unsigned integers returned from load reading to their signed values"""
+    # n: unsigned 32-bit integer (0..4294967295)
+    if n >= 0x80000000:  # If the sign bit is set
+        return n - 0x100000000
+    else:
+        return n
+    
+def convertLoadToSigned(n):
+    """Converts 2 byte unsigned integers returned from load reading to their signed values"""
+    # n: unsigned 16-bit integer (0..65535)
+    if n >= 0x8000:  # If the sign bit is set
+        return n - 0x10000
+    else:
+        return n

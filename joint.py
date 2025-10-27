@@ -8,7 +8,7 @@ class Joint:
     _epsilon = 0.0873
 
     #============================= Joint Construction ==================================
-    def __init__(self, qID, transform, jointLimits, motorParameters, portHandler, packetHandler, groupBulkWrite, groupBulkRead):
+    def __init__(self, qID, transform, jointLimits, motorParameters, portHandler, packetHandler, groupBulkWrite, groupSyncReadPos, groupSyncReadLoad, errorCallback):
         """Initialize a joint for controlling dynamixel motors as part of a kinematic chain"""
         
         self._qID = qID
@@ -17,12 +17,22 @@ class Joint:
         self._joint_limits = jointLimits
         self._motors = []
         for _, paramSet in enumerate(motorParameters):
-            self._motors.append(motor.DynamixelMotor(paramSet, portHandler, packetHandler, groupBulkWrite, groupBulkRead))
+            self._motors.append(motor.DynamixelMotor(paramSet, portHandler, packetHandler, groupBulkWrite, groupSyncReadPos, groupSyncReadLoad, errorCallback))
 
     #============================= Helpers =============================================
     def withinLimits(self, theta):
         """Return True if the given theta is within the limits of this joint"""
         return self._joint_limits[0] <= theta and theta <= self._joint_limits[1]
+    
+    def getJointMovementStatus(self):
+        """Returns the finished moving and under load threshold statuses of a this joint"""
+        allMoving = True
+        allUnderLoadThreshold = True
+        for _, motor in enumerate(self._motors):
+            motorMoving, motorUnderLoadThreshold = motor.getMotorMovementStatus()
+            allMoving = allMoving and motorMoving
+            allUnderLoadThreshold = allUnderLoadThreshold and motorUnderLoadThreshold
+        return allMoving, allUnderLoadThreshold
     
     def getTransform(self):
         """Return the symbolic transform from the base of this joint to the next"""
@@ -49,7 +59,7 @@ class Joint:
         if self.withinLimits(theta):
             for _, motor in enumerate(self._motors):
                 newPos = motor.posFromRad(theta)
-                motor.sendMotorPosition(newPos)
+                motor.safeSendMotorPosition(newPos)
                 print('Setting {} to angle {}'.format(self._qID, theta))
         else:
             print('Cannot send joint {} to out of bounds theta: {}'.format(self._qID, theta))
@@ -64,8 +74,8 @@ class Joint:
 
 class Gripper:
     #============================= Gripper Construction ==================================
-    def __init__(self, gripperLimits, tuningParameters, portHandler, packetHandler, groupBulkWrite, groupBulkRead):
-        self._motor = motor.DynamixelMotor(tuningParameters, portHandler, packetHandler, groupBulkWrite, groupBulkRead)
+    def __init__(self, gripperLimits, tuningParameters, portHandler, packetHandler, groupBulkWrite, groupSyncReadPos, groupSyncReadLoad, errorCallback):
+        self._motor = motor.DynamixelMotor(tuningParameters, portHandler, packetHandler, groupBulkWrite, groupSyncReadPos, groupSyncReadLoad, errorCallback)
         self._gripper_lims = gripperLimits
 
     #============================= Gripper Helpers ==================================
