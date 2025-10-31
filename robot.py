@@ -110,8 +110,26 @@ class Blackberry:
             self._gripper = joint.Gripper(gripperConfig['limits'], gripperConfig['motor'], self._portHandler, self._packetHandler, self._groupBulkWrite, self._groupSyncReadPos, self._groupSyncReadLoad, self.errorResponse)
             if startWithTorque:
                 self._gripper.toggleActivate(True)
+
+        #Calibrate Robot
+        self.calibrationRoutine()
         
     #============================= Arm Helpers ==================================   
+    def calibrationRoutine(self):
+        """Hard coded calibration sequence to ensure the safe startup of the arm from any previous state"""
+        #This startup function serves to combat the fact that the motors' position is reset to values within one rotation upon startup,
+        #and joints 1 and 2 rotate multiple times in the full range of the joint.
+
+        #Step 1: for each joint that is limited to 1 rotation, move to a configuration that is safe to not collide while the geared joints are homing.
+        self.setJointAngle(5, 0)
+        self.setJointAngle(4, 1.5708)
+        self.setJointAngle(3, 0)
+        self.setJointAngle(0, 0)
+
+        #Step 2: Home the two geared joints 
+        self.getJoint(2).homeGearedJoint(False)
+        self.getJoint(1).homeGearedJoint(True)
+
     def toggleActivate(self, enableTorque):
         """Toggles the torque activation state for each joint and the gripper in this robot"""
         for _, joint in enumerate(self._joints):
@@ -147,19 +165,16 @@ class Blackberry:
             self._joints[ind].addPendingTheta(ang)
 
         #Write all pending angles
-        comm_result = self._groupBulkWrite.txPacket()
-        if comm_result != COMM_SUCCESS:
-            print('Robot command sending failed: {}'.format(self._packetHandler.getTxRxResult(comm_result)))
-        self._groupBulkWrite.clearParam()
+        util.sendAndClearBulkWrite('Sending all joint angles for robot', self._groupBulkWrite, self._packetHandler)
         
         #Monitor for safety and block until the angles are achieved
         anglesAchieved = False
         while not anglesAchieved:
             anglesAchieved = True
             dxl_comm_result = self._groupSyncReadPos.txRxPacket()
-            readSuccess = self.handleCommResponse(dxl_comm_result, 'Motor {} status (position) read'.format(self._dID))
+            readSuccess = util.handleCommResponse(dxl_comm_result, 'Robot status (position) read', self._packetHandler)
             dxl_comm_result = self._groupSyncReadLoad.txRxPacket()
-            readSuccess = readSuccess and self.handleCommResponse(dxl_comm_result, 'Motor {} status (load) read'.format(self._dID))
+            readSuccess = readSuccess and util.handleCommResponse(dxl_comm_result, 'Robot status (load) read', self._packetHandler)
             if not readSuccess:
                 self.errorResponse()
                 return
@@ -170,7 +185,7 @@ class Blackberry:
                     return
                 #we can't break early because we still want to check the load of each joint
                 anglesAchieved = anglesAchieved and not jointMoving
-            time.sleep(0.05)
+            time.sleep(util.POLLING_DELAY)
 
     def setIndividualJointAngles(self, q):
         """Adds and sends commands to each motor one at a time given an array of joint angles"""
@@ -184,9 +199,16 @@ class Blackberry:
             q.append(joint.readTheta())
         return q
     
+    def getJoint(self, qInd):
+        """Returns the joint object if it is present in this robot arm, otherwise None"""
+        if qInd >= len(self._joints):
+            print('Joint {} out of bounds for this robot')
+            return None
+        return self._joints[qInd]
+    
     def setJointAngle(self, qInd, theta):
         """Adds and sends commands to one motor given a joint angle"""
-        self._joints[qInd].sendToTheta(theta)
+        self.getJoint(qInd).sendToTheta(theta)
 
     def getEE(self, q):
         """Get the homogeneous transform of the end effector in the base frame given an array of joint angles"""

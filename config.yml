@@ -9,9 +9,8 @@ arm:
           d: 640
           ff2: 0
           ff1: 0
-          samples:
-            - [0, 2048]
-            - [1.5708, 3072]
+          zeroPos: 2048
+          radsPerPos: 0.00153398193
     # Joint 1 (Shoulder Flexion)
     - limits: [-1.5708, 1.5708]
       motors:
@@ -21,18 +20,16 @@ arm:
           d: 640
           ff2: 0
           ff1: 0
-          samples:
-            - [0, 1958]
-            - [-1.5708, 5630]      
+          zeroPos: 0 # This zero position will be homed
+          radsPerPos: -0.000428088  
         - id: 3
           p: 3600
           i: 0
           d: 640
           ff2: 0
           ff1: 0
-          samples:
-            - [0, 2122]
-            - [-1.5708, -1550] 
+          zeroPos: 0 # This zero position will be homed
+          radsPerPos: 0.000428088
     # Joint 2 (Elbow Flexion)
     - limits: [-1.5708, 1.5708]
       motors:
@@ -42,18 +39,16 @@ arm:
           d: 640
           ff2: 0
           ff1: 0
-          samples:
-            - [0, 3360]
-            - [1.5708, -312]       
+          zeroPos: 0 # This zero position will be homed
+          radsPerPos: -0.000428088
         - id: 5
           p: 3600
           i: 0
           d: 640
           ff2: 0
           ff1: 0
-          samples:
-            - [0, 2048]
-            - [1.5708, 5720]
+          zeroPos: 0 # This zero position will be homed
+          radsPerPos: 0.000428088
     # Joint 3 (Forearm Rotation)
     - limits: [-3.0542, 3.0542]
       motors:
@@ -63,9 +58,8 @@ arm:
           d: 640
           ff2: 0
           ff1: 0
-          samples:
-            - [0, 4096]
-            - [1.5708, 5120]
+          zeroPos: 2048
+          radsPerPos: 0.00153398193
     # Joint 4 (Wrist Flexion)
     - limits: [-2.0071, 1.7453]
       motors:
@@ -75,9 +69,8 @@ arm:
           d: 640
           ff2: 500
           ff1: 1000
-          samples:
-            - [0, 2048]
-            - [-1.5708, 3072]
+          zeroPos: 2048
+          radsPerPos: -0.00153398193
     # Joint 5 (Wrist Rotation)
     - limits: [-3.0542, 3.0542]
       motors:
@@ -87,9 +80,8 @@ arm:
           d: 640
           ff2: 0
           ff1: 0
-          samples:
-            - [0, 2048]
-            - [1.5708, 3072]
+          zeroPos: 2048
+          radsPerPos: 0.00153398193
   gripper:
     limits: [2600, 3900]
     motor:
@@ -99,7 +91,6 @@ arm:
       d: 640
       ff2: 0
       ff1: 0
-      #Gripper doesn't have angle control, so no samples are provided
-      samples:
-        - [0, 0]
-        - [0, 0]
+      #Gripper doesn't have angle control, so no angle data provided
+      zeroPos: 0
+      radsPerPos: 0

@@ -36,7 +36,8 @@ class DynamixelMotor:
     _vel_time_profile = 2000
     _acc_time_profile = 500
     _pos_epsilon = 35 #~3 Degrees 
-    _load_threshold = 200 #20%
+    _load_threshold = 400 #40%
+    _polling_delay = 0.050
 
     #============================= DynamixelMotor Construction ==================================
     def __init__(self, tuningParameters, portHandler, packetHandler, groupBulkWrite, groupSyncReadPos, groupSyncReadLoad, errorCallback):
@@ -53,16 +54,8 @@ class DynamixelMotor:
         self._dID = tuningParameters.id
 
         #Setup/Tune Motor
-        self._tuningParemeters = tuningParameters
-
-        posDiff = (tuningParameters.samples[0][1] - tuningParameters.samples[1][1])
-        if posDiff != 0:
-            self._radsPerPos = (tuningParameters.samples[0][0] - tuningParameters.samples[1][0]) / posDiff
-        else:
-            print('Motor {} unable to calculate angle to position conversion given samples, setting to 1'.format(self._dID))
-            self._radsPerPos = 1
-
-        self._radIntercept = tuningParameters.samples[0][0] - self._radsPerPos * tuningParameters.samples[0][1]
+        self._tuningParameters = tuningParameters
+        self.setZeroPos(tuningParameters.zeroPos)
 
         #Store error callback function
         self._errorCallback = errorCallback
@@ -77,20 +70,6 @@ class DynamixelMotor:
         self.setTimeProfile()
 
     #============================= Comm Utilities ==========================================
-    def sendAndClearBulkWrite(self, command_string):
-        """Send a groupBulkWrite pending packet of params, and handle logging the result with the given command string before clearing the groupBulkWrite"""
-        dxl_comm_result = self._groupBulkWrite.txPacket()
-        self.handleCommResponse(dxl_comm_result, command_string)
-        self._groupBulkWrite.clearParam()
-
-    def handleCommResponse(self, comm_result, command_string, verbose = False):
-        """Handle the repeated logic of checking the result of a dynamixel communication, and printing success/failure with the given command string. Also returns True when the communication was successful."""
-        if comm_result != COMM_SUCCESS:
-            print('Dynamixel command failure: {} | {}'.format(command_string, self._packetHandler.getTxRxResult(comm_result)))
-        elif verbose:
-            print('Dynamixel command success: {}'.format(command_string))
-        return comm_result == COMM_SUCCESS
-    
     def configureMotorReads(self):
         """Initialize the groupBulkRead with all the parameters we want to read from the given dID"""
         dxl_addparam_result = self._groupSyncReadPos.addParam(self._dID)
@@ -109,7 +88,7 @@ class DynamixelMotor:
         """Toggle the torque for a single motor"""
         toggleParam = TORQUE_ENABLE if enable else TORQUE_DISABLE
         dxl_comm_result, dxl_error = self._packetHandler.write1ByteTxRx(self._portHandler, self._dID, ADDR_TORQUE_ENABLE, toggleParam)
-        self.handleCommResponse(dxl_comm_result, 'Motor {} torque toggled {}'.format(self._dID, toggleParam))
+        util.handleCommResponse(dxl_comm_result, 'Motor {} torque toggled {}'.format(self._dID, toggleParam), self._packetHandler)
         #Additional error handling potential just for single byte writes
         if dxl_error != 0:
             print('Torque toggle error: {}'.format(self._packetHandler.getRxPacketError(dxl_error)))
@@ -117,59 +96,64 @@ class DynamixelMotor:
     def setPositionPID(self):
         """Sets the PID position parameters for a single motor"""
         #P
-        param_position_p = [DXL_LOBYTE(self._tuningParemeters.p), DXL_HIBYTE(self._tuningParemeters.p)]
+        param_position_p = [DXL_LOBYTE(self._tuningParameters.p), DXL_HIBYTE(self._tuningParameters.p)]
         self._groupBulkWrite.addParam(self._dID, ADDR_POSITION_P, LEN_POSITION_PID, param_position_p)
-        self.sendAndClearBulkWrite('Motor {} P set to: {}'.format(self._dID, self._tuningParemeters.p))
+        util.sendAndClearBulkWrite('Motor {} P set to: {}'.format(self._dID, self._tuningParameters.p), self._groupBulkWrite, self._packetHandler)
         #I
-        param_position_i = [DXL_LOBYTE(self._tuningParemeters.i), DXL_HIBYTE(self._tuningParemeters.i)]
+        param_position_i = [DXL_LOBYTE(self._tuningParameters.i), DXL_HIBYTE(self._tuningParameters.i)]
         self._groupBulkWrite.addParam(self._dID, ADDR_POSITION_I, LEN_POSITION_PID, param_position_i)
-        self.sendAndClearBulkWrite('Motor {} I set to: {}'.format(self._dID, self._tuningParemeters.i))
+        util.sendAndClearBulkWrite('Motor {} I set to: {}'.format(self._dID, self._tuningParameters.i), self._groupBulkWrite, self._packetHandler)
         #D
-        param_position_d = [DXL_LOBYTE(self._tuningParemeters.d), DXL_HIBYTE(self._tuningParemeters.d)]
+        param_position_d = [DXL_LOBYTE(self._tuningParameters.d), DXL_HIBYTE(self._tuningParameters.d)]
         self._groupBulkWrite.addParam(self._dID, ADDR_POSITION_D, LEN_POSITION_PID, param_position_d)
-        self.sendAndClearBulkWrite('Motor {} D set to: {}'.format(self._dID, self._tuningParemeters.d))
+        util.sendAndClearBulkWrite('Motor {} D set to: {}'.format(self._dID, self._tuningParameters.d), self._groupBulkWrite, self._packetHandler)
 
     def setPositionFF(self):
         """Sets the feedforward gain parameters for a single motor"""
         #FF2
-        param_ff_acc = [DXL_LOBYTE(self._tuningParemeters.ff2), DXL_HIBYTE(self._tuningParemeters.ff2)]
+        param_ff_acc = [DXL_LOBYTE(self._tuningParameters.ff2), DXL_HIBYTE(self._tuningParameters.ff2)]
         self._groupBulkWrite.addParam(self._dID, ADDR_FF_ACC_GAIN, LEN_FF_GAIN, param_ff_acc)
-        self.sendAndClearBulkWrite('Motor {} FF2 (acc) set to: {}'.format(self._dID, self._tuningParemeters.ff2))
+        util.sendAndClearBulkWrite('Motor {} FF2 (acc) set to: {}'.format(self._dID, self._tuningParameters.ff2), self._groupBulkWrite, self._packetHandler)
         #FF1
-        param_ff_vel = [DXL_LOBYTE(self._tuningParemeters.ff1), DXL_HIBYTE(self._tuningParemeters.ff1)]
+        param_ff_vel = [DXL_LOBYTE(self._tuningParameters.ff1), DXL_HIBYTE(self._tuningParameters.ff1)]
         self._groupBulkWrite.addParam(self._dID, ADDR_FF_VEL_GAIN, LEN_FF_GAIN, param_ff_vel)
-        self.sendAndClearBulkWrite('Motor {} FF1 (vel) set to: {}'.format(self._dID, self._tuningParemeters.ff1))
+        util.sendAndClearBulkWrite('Motor {} FF1 (vel) set to: {}'.format(self._dID, self._tuningParameters.ff1), self._groupBulkWrite, self._packetHandler)
 
     def setModes(self):
         """Sets the drive and operating modes for a single motor"""
         #Drive Mode 4 = time profile
         self._groupBulkWrite.addParam(self._dID, ADDR_DRIVE_MODE, LEN_DRIVE_MODE, [4])
-        self.sendAndClearBulkWrite('Motor drive mode set to time profile')
+        util.sendAndClearBulkWrite('Motor {} drive mode set to time profile'.format(self._dID), self._groupBulkWrite, self._packetHandler)
         #Operating Mode 4 = extended position control - allows sending of negative positions to rotate clockwise
         self._groupBulkWrite.addParam(self._dID, ADDR_OP_MODE, LEN_OP_MODE, [4])
-        self.sendAndClearBulkWrite('Motor operating mode set to extended position control')
+        util.sendAndClearBulkWrite('Motor {} operating mode set to extended position control'.format(self._dID), self._groupBulkWrite, self._packetHandler)
 
     def setTimeProfile(self):
-        """Sets the feedforward gain parameters for a single motor"""
-        #Drive Mode 4 = time profile
-        self._groupBulkWrite.addParam(self._dID, ADDR_DRIVE_MODE, LEN_DRIVE_MODE, [4])
-        self.sendAndClearBulkWrite('Motor drive mode set to time profile')
+        """Sets the motor profile velocity and acceleration time limits for a single motor"""
         #Velocity Time Limit
         param_vel_time = [DXL_LOBYTE(DXL_LOWORD(self._vel_time_profile)), DXL_HIBYTE(DXL_LOWORD(self._vel_time_profile)), DXL_LOBYTE(DXL_HIWORD(self._vel_time_profile)), DXL_HIBYTE(DXL_HIWORD(self._vel_time_profile))]
         self._groupBulkWrite.addParam(self._dID, ADDR_VEL_PROF, LEN_VEL_PROF, param_vel_time)
-        self.sendAndClearBulkWrite('Motor {} velocity time profile set to: {}'.format(self._dID, self._vel_time_profile))
+        util.sendAndClearBulkWrite('Motor {} velocity time profile set to: {}'.format(self._dID, self._vel_time_profile), self._groupBulkWrite, self._packetHandler)
         #Acceleration Time Limit
         param_acc_time = [DXL_LOBYTE(DXL_LOWORD(self._acc_time_profile)), DXL_HIBYTE(DXL_LOWORD(self._acc_time_profile)), DXL_LOBYTE(DXL_HIWORD(self._acc_time_profile)), DXL_HIBYTE(DXL_HIWORD(self._acc_time_profile))]
         self._groupBulkWrite.addParam(self._dID, ADDR_ACC_PROF, LEN_ACC_PROF, param_acc_time)
-        self.sendAndClearBulkWrite('Motor {} acceleration time profile set to: {}'.format(self._dID, self._acc_time_profile))   
+        util.sendAndClearBulkWrite('Motor {} acceleration time profile set to: {}'.format(self._dID, self._acc_time_profile), self._groupBulkWrite, self._packetHandler)
+
+    def setZeroPos(self, zeroPos):
+        """Given a position at which this joint is 0 degrees, and set the radians at which pos 0 lands (the radian intercept)"""
+        self._radIntercept = -zeroPos * self._tuningParameters.radsPerPos
+
+    def getRadsPerPos(self):
+        """Return the configured radians covered by one dynamixel position for this motor"""
+        return self._tuningParameters.radsPerPos
 
     def radFromPos(self, pos):
         """Return the angle value associated with the payload of this motor when at the given position"""
-        return (self._radsPerPos * pos) + self._radIntercept
+        return (self._tuningParameters.radsPerPos * pos) + self._radIntercept
 
     def posFromRad(self, rad):
         """Return the position value associated with the payload of this motor when at the given angle"""
-        return int((rad - self._radIntercept)/self._radsPerPos)
+        return int((rad - self._radIntercept)/self._tuningParameters.radsPerPos)
     
     def getMotorMovementStatus(self):
         """Returns the finished moving and under load threshold statuses of a single motor"""
@@ -183,15 +167,17 @@ class DynamixelMotor:
         dxl_load_result = self._groupSyncReadLoad.isAvailable(self._dID, ADDR_PRESENT_LOAD, LEN_PRESENT_LOAD)
         if dxl_load_result == True:
             load = util.convertLoadToSigned(self._groupSyncReadLoad.getData(self._dID, ADDR_PRESENT_LOAD, LEN_PRESENT_LOAD))
+            #useful for testing
+            #print('{} current load is: {}'.format(self._dID, load))
             underLoadThreshold = abs(load) < self._load_threshold
         return moving, underLoadThreshold
     
     def fetchAndGetMotorMovementStatus(self):
         """Returns the finished moving and under load threshold statuses of a single motor after a fresh fetch"""
         dxl_comm_result = self._groupSyncReadPos.txRxPacket()
-        readSuccess = self.handleCommResponse(dxl_comm_result, 'Motor {} status (position) read'.format(self._dID))
+        readSuccess = util.handleCommResponse(dxl_comm_result, 'Motor {} status (position) read'.format(self._dID), self._packetHandler)
         dxl_comm_result = self._groupSyncReadLoad.txRxPacket()
-        readSuccess = readSuccess and self.handleCommResponse(dxl_comm_result, 'Motor {} status (load) read'.format(self._dID))
+        readSuccess = readSuccess and util.handleCommResponse(dxl_comm_result, 'Motor {} status (load) read'.format(self._dID), self._packetHandler)
         if readSuccess:
             return self.getMotorMovementStatus()
         #return worst case by default if comms have failed
@@ -207,7 +193,7 @@ class DynamixelMotor:
     def sendMotorPosition(self, motorPos):
         """Sends a new position for a single motor"""
         self.addMotorPosition(motorPos)
-        self.sendAndClearBulkWrite('Motor {} position set to: {}'.format(self._dID, motorPos))
+        util.sendAndClearBulkWrite('Motor {} position set to: {}'.format(self._dID, motorPos), self._groupBulkWrite, self._packetHandler)
 
     def safeSendMotorPosition(self, motorPos):
         """Sends a new position for a single motor, and monitors for moving over the load threshold while achieving the position"""
@@ -216,13 +202,13 @@ class DynamixelMotor:
         while moving:
             if not underLoadThresh:
                 self._errorCallback.__call__()
-            time.sleep(0.050)
+            time.sleep(util.POLLING_DELAY)
             moving, underLoadThresh = self.fetchAndGetMotorMovementStatus() 
 
     def readMotorPos(self):
         """Returns the position value read for a single motor. Can return None on comms fail."""
         dxl_comm_result = self._groupSyncReadPos.txRxPacket()
-        readSuccess = self.handleCommResponse(dxl_comm_result, 'Motor {} position read'.format(self._dID))
+        readSuccess = util.handleCommResponse(dxl_comm_result, 'Motor {} position read'.format(self._dID), self._packetHandler)
         if readSuccess:
             dxl_getdata_result = self._groupSyncReadPos.isAvailable(self._dID, ADDR_PRESENT_POSITION, LEN_PRESENT_POSITION)
             if dxl_getdata_result == True:
@@ -234,7 +220,7 @@ class DynamixelMotor:
     def readMotorLoad(self):
         """Returns the load value read for a single motor. Can return None on comms fail."""
         dxl_comm_result = self._groupSyncReadLoad.txRxPacket()
-        readSuccess = self.handleCommResponse(dxl_comm_result, 'Motor {} load read'.format(self._dID))
+        readSuccess = util.handleCommResponse(dxl_comm_result, 'Motor {} load read'.format(self._dID), self._packetHandler)
         if readSuccess:
             dxl_getdata_result = self._groupSyncReadLoad.isAvailable(self._dID, ADDR_PRESENT_LOAD, LEN_PRESENT_LOAD)
             if dxl_getdata_result == True:
