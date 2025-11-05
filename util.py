@@ -4,6 +4,7 @@ import copy
 import yaml
 import numpy as np
 import math
+from sympy import Matrix
 
 POLLING_DELAY = 0.050
 
@@ -98,4 +99,18 @@ def getClosestGearToothAlignmentPos(alignmentVal, initPos):
         if abs(initPosInRad - sol2) < abs(initPosInRad - bestSolution):
             bestSolution = sol2
     return round(bestSolution * 4096/(2 * np.pi))
+
+def getErrorVector(pose1, pose2):
+    """Return the column vector of errors between two """
+    if len(pose1) == 6 and len(pose2) == 6:
+        return Matrix([[pose1[0]-pose2[0]], [pose1[1]-pose2[1]], [pose1[2]-pose2[2]], [pose1[3]-pose2[3]], [pose1[4]-pose2[4]], [pose1[5]-pose2[5]]])
+    print('Bad input - poses not 6DOF.')
+    return Matrix([[]])
+
+def getMagnitude(vec):
+    """Return the magnitude of the given vector of values"""
+    squareSums = 0
+    for error in vec:
+        squareSums += error ** 2
+    return math.sqrt(squareSums)
     

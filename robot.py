@@ -1,7 +1,9 @@
 from dynamixel_sdk import * 
-from sympy import sin, cos, Matrix, eye, symbols
+from sympy import sin, cos, asin, atan2, Matrix, pi, eye, symbols, lambdify
 import joint
+import math
 import util
+import numpy as np
 
 # Dynamixel constants for X_SERIES
 BAUDRATE                    = 57600
@@ -28,39 +30,57 @@ class Blackberry:
     # Zeroed angle values represent the robot facing forward and pointing straight up
 
     # ========= Kinematic Members =========
+    _solve_attempts = 15
+    _max_iterations = 500
+    _error_epsilon = 0.001
+    _dq_epsilon = 0.0001
+    _learning_rate = 0.35
+    _decay_per_iteration = 0.65
 
     #Current joint angles of the robot
     _q = [0, 0, 0, 0, 0, 0]
     #Symbols for the thetas of each joint to be used in the accompanying 
-    _q1, _q2, _q3, _q4, _q5, _q6 = symbols('_q1 _q2 _q3 _q4 _q5 _q6')
-    _q_trans = [Matrix([[cos(_q1),  -sin(_q1), 0,         0],
-                        [sin(_q1),  cos(_q1),  0,         0],
-                        [0,         0,         1,         0.123],
+    _q0, _q1, _q2, _q3, _q4, _q5 = symbols('_q0 _q1 _q2 _q3 _q4 _q5')
+    _inputSymbols = [_q0, _q1, _q2, _q3, _q4, _q5]
+    #Linkage and sub linkage lengths (meters)
+    _l0 = 0.135
+    _l1z = 0.185
+    _l1x = 0.080
+    _l2 = 0.115
+    _l3 = 0.078
+    _l4 = 0.065
+    _l5 = 0.105
+    #Per joint transforms (written in symbolic code, so inconvenient to extract from a config file - hardcoding instead)
+    _q_trans = [
+                #T01
+                Matrix([[cos(_q0),  -sin(_q0), 0,         0],
+                        [sin(_q0),  cos(_q0),  0,         0],
+                        [0,         0,         1,         _l0],
                         [0,         0,         0,         1]]),
-
-                Matrix([[cos(_q2),  0,         sin(_q2),  0.073],
+                #T12
+                Matrix([[cos(_q1),  0,         sin(_q1),  (_l1z * sin(_q1)) + (_l1x * sin(pi/2 - _q1))],
                         [0,         1,         0,         0],
-                        [-sin(_q2), 0,         cos(_q2),  0.188],
+                        [-sin(_q1), 0,         cos(_q1),  (_l1z * cos(_q1)) - (_l1x * cos(pi/2 - _q1))],
                         [0,         0,         0,         1]]),
-
-                Matrix([[cos(_q3),  0,         sin(_q3),  0.112],
+                #T23
+                Matrix([[cos(_q2),  0,         sin(_q2),  _l2 * cos(_q2)],
                         [0,         1,         0,         0],
-                        [-sin(_q3), 0,         cos(_q3),  0],
+                        [-sin(_q2), 0,         cos(_q2),  -(_l2 * sin(_q2))],
                         [0,         0,         0,         1]]),
-
-                Matrix([[1,         0,         0,         0.080],
-                        [0,         cos(_q4),  -sin(_q4), 0],
-                        [0,         sin(_q4),  cos(_q4),  0],
+                #T34
+                Matrix([[1,         0,         0,         _l3],
+                        [0,         cos(_q3),  -sin(_q3), 0],
+                        [0,         sin(_q3),  cos(_q3),  0],
                         [0,         0,         0,         1]]),
-
-                Matrix([[cos(_q5),  0,         sin(_q5),  0.065],
+                #T45
+                Matrix([[cos(_q4),  0,         sin(_q4),  _l4 * cos(_q4)],
                         [0,         1,         0,         0],
-                        [-sin(_q5), 0,         cos(_q5),  0],
+                        [-sin(_q4), 0,         cos(_q4),  -(_l4 * sin(_q4))],
                         [0,         0,         0,         1]]),
-
-                Matrix([[1,         0,         0,         0.110],
-                        [0,         cos(_q6),  -sin(_q6), 0],
-                        [0,         sin(_q6),  cos(_q6),  0],
+                #T56
+                Matrix([[1,         0,         0,         _l5],
+                        [0,         cos(_q5),  -sin(_q5), 0],
+                        [0,         sin(_q5),  cos(_q5),  0],
                         [0,         0,         0,         1]])]
 
     def __init__(self, useHardware = True, usbPort = '/dev/ttyUSB0', startWithTorque = True):
@@ -95,24 +115,27 @@ class Blackberry:
         #Initialize all joints from config
         jointConfigs = config['arm']['joints']
         self._joints = []
-        self._FK = eye(4)
+        self._T06 = eye(4)
         for i, jointConfig in enumerate(jointConfigs):
-            if useHardware:
-                nextJoint = joint.Joint(i, self._q_trans[i], jointConfig['limits'], jointConfig['motors'], self._portHandler, self._packetHandler, self._groupBulkWrite, self._groupSyncReadPos, self._groupSyncReadLoad, self.errorResponse)
-                if startWithTorque:
-                    nextJoint.toggleActivate(True)
-                self._joints.append(nextJoint)
-            self._FK *= self._q_trans[i]
+            nextJoint = joint.Joint(i, self._q_trans[i], jointConfig['limits'], jointConfig['motors'], self._portHandler, self._packetHandler, self._groupBulkWrite, self._groupSyncReadPos, self._groupSyncReadLoad, self.errorResponse, useHardware)
+            if startWithTorque:
+                nextJoint.toggleActivate(True)
+            self._joints.append(nextJoint)
+            self._T06 *= self._q_trans[i]
+
+        #Pre-compute expensive kinematic functions
+        self._fkNumeric = lambdify(self._inputSymbols, self.getFK(), cse=True)
+        self._jacobianNumeric = lambdify(self._inputSymbols, self.getFK().jacobian(self._inputSymbols), cse=True)
 
         #Initialize Gripper
         gripperConfig = config['arm']['gripper']
-        if useHardware:
-            self._gripper = joint.Gripper(gripperConfig['limits'], gripperConfig['motor'], self._portHandler, self._packetHandler, self._groupBulkWrite, self._groupSyncReadPos, self._groupSyncReadLoad, self.errorResponse)
-            if startWithTorque:
-                self._gripper.toggleActivate(True)
+        self._gripper = joint.Gripper(gripperConfig['limits'], gripperConfig['motor'], self._portHandler, self._packetHandler, self._groupBulkWrite, self._groupSyncReadPos, self._groupSyncReadLoad, self.errorResponse, useHardware)
+        if startWithTorque:
+            self._gripper.toggleActivate(True)
 
         #Calibrate Robot
-        self.calibrationRoutine()
+        if useHardware:
+            self.calibrationRoutine()
         
     #============================= Arm Helpers ==================================   
     def calibrationRoutine(self):
@@ -135,27 +158,6 @@ class Blackberry:
         for _, joint in enumerate(self._joints):
             joint.toggleActivate(enableTorque)
         self._gripper.toggleActivate(enableTorque)
-
-    def eulerAnglesToRotMatrix(roll, pitch, yaw):
-        """Computes the rotation matrix equivalent of the given euler angles"""
-        r, p, y = symbols('r p y')
-        rollRot =  Matrix([[1,       0,       0],
-                           [0,       cos(r),  -sin(r)],
-                           [0,       sin(r),  cos(r)]]),
-
-        pitchRot = Matrix([[cos(p),  0,       sin(p)],
-                           [0,       1,       0],
-                           [-sin(p), 0,       cos(p)]])
-
-        yawRot =   Matrix([[cos(y),  -sin(y), 0],
-                           [sin(y),  cos(y),  0],
-                           [0,       0,       1]])
-        
-        fullRot = rollRot * pitchRot * yawRot
-        substituteDict = {r: roll,
-                          p: pitch,
-                          y: yaw}
-        return fullRot.evalf(subs=substituteDict)
 
     #============================= Arm Control ==================================
     def setJointAngles(self, q):
@@ -209,16 +211,6 @@ class Blackberry:
     def setJointAngle(self, qInd, theta):
         """Adds and sends commands to one motor given a joint angle"""
         self.getJoint(qInd).sendToTheta(theta)
-
-    def getEE(self, q):
-        """Get the homogeneous transform of the end effector in the base frame given an array of joint angles"""
-        substituteDict = {self._q1: q[0],
-                          self._q2: q[1],
-                          self._q3: q[2],
-                          self._q4: q[3],
-                          self._q5: q[4],
-                          self._q6: q[5]}
-        return self._FK.evalf(subs=substituteDict)
     
     def errorResponse(self):
         """Callback function invoked upon any arm joint encountering a run time error"""
@@ -230,3 +222,63 @@ class Blackberry:
     def setGripper(self, gripVal):
         """Adds and sends a gripper command based on the given gripper percentage"""
         self._gripper.sendGripperPostion(gripVal)
+
+    #============================= Kinematics ==================================
+    def getFK(self):
+        """Return a 1x6 matrix of the functions to calculate [x, y, z, yaw, pitch, roll] given q"""
+        #We have to use the YPR angle order as the transformation from T0 to T6 introduces the angles in that order
+        return Matrix([[self._T06[0, 3], self._T06[1, 3], self._T06[2, 3],  atan2(self._T06[1, 0], self._T06[0, 0]), asin(-self._T06[2, 0]), atan2(self._T06[2,1], self._T06[2,2])]])
+
+    def getEE(self, q):
+        """Get the [x, y, z, yaw, pitch, roll] of the end effector in the base frame given an array of joint angles"""
+        #Extract the first row of the 1x6 pose matrix
+        return self._fkNumeric(*q)[0]
+
+    def IK(self, goalPose):
+        """Return the joint configuration that will achieve the given goal transform, or None if the goal transform is unreachable or at a singularity"""
+        print('Running IK')
+        q = self.readAllJointAngles()
+        att = 0
+        candidatePoses = {}
+        while att < self._solve_attempts:
+            print('.')
+            it = 0
+            err = 99999
+            lastErr = err
+            bestErr = 99999
+            bestQ = []
+            while it < self._max_iterations:
+                #Calculate error (difference between current pose and goal pose)
+                curPose = self.getEE(q)
+                dX = util.getErrorVector(goalPose, curPose)
+                err = util.getMagnitude(dX)
+                #Exit early if the current joint configuration results in an extremely close pose
+                if err < self._error_epsilon:
+                    return q
+                #Use gradient descent to generate a closer q
+                dQ = (self._jacobianNumeric(*q) * dX)
+                #Adjust learning rate to decay as we get further in iterations (should it be proportional to our distance to the goal instead?)
+                alpha = (self._learning_rate * err) if err != 0 else self._learning_rate
+                dQ *= alpha
+                #Break if there's no change in error - we're likely at a local minimum
+                if (lastErr == err):
+                    break
+                if (err < bestErr):
+                    bestErr = err
+                    bestQ = q
+                #Break if our learning rate becomes too slight
+                if util.getMagnitude(dQ) < self._dq_epsilon:
+                    break
+                #Update q, enforcing joint limits
+                for i in range(len(q)):
+                    q[i] = self.getJoint(i).enforceLimits(float(q[i] + dQ[i]))
+                it += 1
+                lastErr = err
+            candidatePoses[bestErr] = bestQ
+            #Generate a new random starting configuration in case it generates a better solution
+            newInBoundsQ = []
+            for _, joint in enumerate(self._joints):
+                newInBoundsQ.append(joint.getRandom())
+            q = newInBoundsQ
+            att += 1
+        return candidatePoses[min(candidatePoses)]
