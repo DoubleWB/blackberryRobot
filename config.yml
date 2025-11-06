@@ -67,8 +67,8 @@ arm:
           p: 3600
           i: 0
           d: 640
-          ff2: 500
-          ff1: 1000
+          ff2: 1000
+          ff1: 2000
           zeroPos: 2048
           radsPerPos: -0.00153398193
     # Joint 5 (Wrist Rotation)

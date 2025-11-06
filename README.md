@@ -1,21 +1,48 @@
-This readme has been added as part of an initial commit of a lot of work to a github repository. 
+# The Blackberry Robot
+The Blackberry robot is my personal 6 DOF robotic manipulator based on the open source Trossen WidowX 250S. It is slightly smaller, and uses improvised gear boxes to increase the torque of lower output motors, but is generally the same form factor.
 
-This project serves as an overall rewrite and redesign of the code I wrote to control Blueberry, a 5 DOF robot that was the predecessor to Blackberry.
+# The Design
+The only truly novel part of the Blackberry physical design is the decorative motor board enclosure, and the addition of a gear box to the elbow and shoulder flexion joints. 3D Files for these parts will be attached once the designs are finalized or close to it.
 
-As this project moves closer to a final form, more implementation details to come - for the time being this shall serve as a documentation of the work currently done and the future work that might define this project.
+# The Software
+The aim of this project is to build understanding about robotic manipulators by trying to build a robust platform more or less from scratch. Some of the code base is built off the software to drive the Blueberry - a 5DOF arm that was the predecessor to the Blackberry.
 
-The initial commit represents the work that was done in one burst over parental leave - it includes:
- * Code to communicate with and control Dynamixel motors
- * Code to organize Dynamixel motors into joints that are part of one robot arm
- * Code to allow the reconfiguration or tweaking of the robot arm via config file
- * Code to run forward kinematics on the blackberry robot arm
+## Current Functionality
+### Low level control
+ * Easy configuration of the Dynamixel motors tuning parameters and mounting configuration via config file.
+ * Individual, joint, and robot level control of the Dynamixel motors.
+ * Collision/stress protected movements, to avoid the robot breaking itself or injuring any human collaborators (the aim is for this manipulator to be a Co-bot).
+ * Calibration routines for non trivial joints to ensure consistent startup behavior.
+### Kinematics
+ * Efficient forward kinmatics mapping joint angles to X, Y, Z, Yaw, Pitch, Roll definied poses.
+ * Basic inverse kinematics control via gradient descent. Seems to function well when well within the workspace of the manipulator.
 
-Future additions will include:
- * Code to enforce that the arm will stop ongoing movement commands if failures are detected in any joint
- * Code to work around extended position control positions being reset upon arm reboot
- * Inverse kinematics on the blackberry robot arm
-  * Orientation and Translation based inverse kinematics separately
- * Integration with some sort of networked solution (ROS?) to allow for the robot to receive teleoperation commands
- * Trajectory planning
- * Static (environment based) object avoidance
- * Dynamic object avoidance
+## Wishlist/Future topics of development
+### Safety
+ * Robustification against self collision in otherwise valid joint configurations.
+ * Robustification against external collision with pre-defined obstacles in otherwise valid joint configurations.
+ * System of dynamic obstacle avoidance.
+ * Sensor based input to the above dynamic system.
+
+### Kinematics
+ * General performance improvement of inverse kinematics.
+  * Cacheing of previously achieved poses.
+  * Experimenting with Damped Least Squares to improve speed at the cost of accuracy.
+  * Early exit conditions to better detect local minima.
+ * Reasonable implementation of translation only/orientation only inverse kinematics.
+ * Trajectory planning.
+ * Partial Arm Kinematics.
+
+### Ease of Use
+ * Handheld pose teaching by a human collaborator.
+ * More robust calibration routines that are safe against collision from any starting configuration.
+ * Robot control over ROS.
+ * Better input devices for robot control than inputting a pose numerically.
+
+### Behaviors
+ * Some hardcoded behavior scripts like waving or interacting with pre placed objects.
+ * The ability to point the manipulator at a point in space, and mapping those points to human identifiers.
+ * Autonomous routines, such as dynamic grasping or pick and place.
+
+# Status!
+This README has been rewritten to reflect that the project has reached a true 'starting point' - enough functionality is present to begin experimenting with and researching different robotic manipulator capabilities. Next steps will involve setting up a permanent home for the Blackberry, and then picking some items off of the long wishlist to start implementing!

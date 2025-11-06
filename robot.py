@@ -254,7 +254,7 @@ class Blackberry:
                 err = util.getMagnitude(dX)
                 #Exit early if the current joint configuration results in an extremely close pose
                 if err < self._error_epsilon:
-                    return q
+                    return err, q
                 #Use gradient descent to generate a closer q
                 dQ = (np.linalg.pinv(self._jacobianNumeric(*q)) * dX)
                 #Adjust learning rate to decay as we get further in iterations (should it be proportional to our distance to the goal instead?)
@@ -278,4 +278,5 @@ class Blackberry:
                 newInBoundsQ.append(joint.getRandom())
             q = newInBoundsQ
             att += 1
-        return candidatePoses[min(candidatePoses)]
+        lowestError = min(candidatePoses)
+        return lowestError, candidatePoses[lowestError]
