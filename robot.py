@@ -30,12 +30,11 @@ class Blackberry:
     # Zeroed angle values represent the robot facing forward and pointing straight up
 
     # ========= Kinematic Members =========
-    _solve_attempts = 15
-    _max_iterations = 500
+    _solve_attempts = 20
+    _max_iterations = 250
     _error_epsilon = 0.001
-    _dq_epsilon = 0.0001
-    _learning_rate = 0.35
-    _decay_per_iteration = 0.65
+    _learning_rate = 0.05#0.35
+    _decay_per_iteration = .999#0.65
 
     #Current joint angles of the robot
     _q = [0, 0, 0, 0, 0, 0]
@@ -124,8 +123,8 @@ class Blackberry:
             self._T06 *= self._q_trans[i]
 
         #Pre-compute expensive kinematic functions
-        self._fkNumeric = lambdify(self._inputSymbols, self.getFK(), cse=True)
-        self._jacobianNumeric = lambdify(self._inputSymbols, self.getFK().jacobian(self._inputSymbols), cse=True)
+        self._fkNumeric = lambdify(self._inputSymbols, self.getFK(), cse = True, docstring_limit = 0)
+        self._jacobianNumeric = lambdify(self._inputSymbols, self.getFK().jacobian(self._inputSymbols), cse = True, docstring_limit = 0)
 
         #Initialize Gripper
         gripperConfig = config['arm']['gripper']
@@ -237,7 +236,8 @@ class Blackberry:
     def IK(self, goalPose):
         """Return the joint configuration that will achieve the given goal transform, or None if the goal transform is unreachable or at a singularity"""
         print('Running IK')
-        q = self.readAllJointAngles()
+        #q = self.readAllJointAngles()
+        q = [0, 0, 0, 0, 0, 0]
         att = 0
         candidatePoses = {}
         while att < self._solve_attempts:
@@ -256,9 +256,9 @@ class Blackberry:
                 if err < self._error_epsilon:
                     return q
                 #Use gradient descent to generate a closer q
-                dQ = (self._jacobianNumeric(*q) * dX)
+                dQ = (np.linalg.pinv(self._jacobianNumeric(*q)) * dX)
                 #Adjust learning rate to decay as we get further in iterations (should it be proportional to our distance to the goal instead?)
-                alpha = (self._learning_rate * err) if err != 0 else self._learning_rate
+                alpha = self._learning_rate * (self._decay_per_iteration ** it)
                 dQ *= alpha
                 #Break if there's no change in error - we're likely at a local minimum
                 if (lastErr == err):
@@ -266,9 +266,6 @@ class Blackberry:
                 if (err < bestErr):
                     bestErr = err
                     bestQ = q
-                #Break if our learning rate becomes too slight
-                if util.getMagnitude(dQ) < self._dq_epsilon:
-                    break
                 #Update q, enforcing joint limits
                 for i in range(len(q)):
                     q[i] = self.getJoint(i).enforceLimits(float(q[i] + dQ[i]))
