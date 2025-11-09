@@ -8,24 +8,24 @@ from sympy import Matrix
 
 POLLING_DELAY = 0.050
 
-@dataclass
 class MotorConfig:
-    #Dynamixel defined ID for this motor
-    id: int
-    #Position at which the angle of this motor is 0
-    zeroPos: int
-    #The number of radians per pos increment (can be negative to represent reversed motors)
-    radsPerPos: float = 0.00153398193
-    #p parameter of PID control - converted by division by 128
-    p: int = 640
-    #i parameter of PID control - converted by division by 65536
-    i: int = 0
-    #i parameter of PID control - converted by division by 16
-    d: int = 3600
-    #acceleration gain of feed forward control - converted by division by 4
-    ff2: int = 0
-    #velocity gain of feed forward control - converted by division by 4
-    ff1: int = 0
+    def __init__(self, id, zeroPos, radsPerPos = 0.00153398193, p = 640, i = 0, d = 3600, ff2 = 0, ff1 = 0):
+        #Dynamixel defined ID for this motor
+        self.id = id
+        #Position at which the angle of this motor is 0
+        self.zeroPos = zeroPos
+        #The number of radians per pos increment (can be negative to represent reversed motors)
+        self.radsPerPos = radsPerPos
+        #p parameter of PID control - converted by division by 128
+        self.p = p
+        #i parameter of PID control - converted by division by 65536
+        self.i = i
+        #d parameter of PID control - converted by division by 16
+        self.d = d
+        #acceleration gain of feed forward control - converted by division by 4
+        self.ff2 = ff2
+        #velocity gain of feed forward control - converted by division by 4
+        self.ff1 = ff1
 
 def getArmConfiguration():
     """Get arm configuration from the local config file and unpack it into a dataclass"""
