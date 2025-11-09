@@ -39,4 +39,4 @@ def traceCircleTest(xCenter, yCenter, zCenter, radius):
 
 
 if __name__ == '__main__':
-    traceCircleTest(.25, 0, .25, .05)
+    traceCircleTest(.25, 0, .25, .1)

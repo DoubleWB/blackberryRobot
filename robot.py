@@ -33,8 +33,8 @@ class Blackberry:
     _solve_attempts = 20
     _max_iterations = 250
     _error_epsilon = 0.001
-    _learning_rate = 0.05#0.35
-    _decay_per_iteration = .999#0.65
+    _learning_rate = 0.05
+    _decay_per_iteration = .999
 
     #Current joint angles of the robot
     _q = [0, 0, 0, 0, 0, 0]
@@ -144,9 +144,9 @@ class Blackberry:
 
         #Step 1: for each joint that is limited to 1 rotation, move to a configuration that is safe to not collide while the geared joints are homing.
         self.setJointAngle(5, 0)
-        self.setJointAngle(4, 1.5708)
+        self.setJointAngle(4, np.pi/2)
         self.setJointAngle(3, 0)
-        self.setJointAngle(0, 0)
+        self.setJointAngle(0, np.pi/2)
 
         #Step 2: Home the two geared joints 
         self.getJoint(2).homeGearedJoint(False)
