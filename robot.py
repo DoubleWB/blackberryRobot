@@ -123,8 +123,8 @@ class Blackberry:
             self._T06 *= self._q_trans[i]
 
         #Pre-compute expensive kinematic functions
-        self._fkNumeric = lambdify(self._inputSymbols, self.getFK(), cse = True, docstring_limit = 0)
-        self._jacobianNumeric = lambdify(self._inputSymbols, self.getFK().jacobian(self._inputSymbols), cse = True, docstring_limit = 0)
+        self._fkNumeric = lambdify(self._inputSymbols, self.getFK())
+        self._jacobianNumeric = lambdify(self._inputSymbols, self.getFK().jacobian(self._inputSymbols))
 
         #Initialize Gripper
         gripperConfig = config['arm']['gripper']

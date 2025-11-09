@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from dynamixel_sdk import COMM_SUCCESS
 import copy
 import yaml
