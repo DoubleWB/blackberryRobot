@@ -127,10 +127,10 @@ class Joint:
         print("{} calibrated!".format(self._qID))
         if convex:
             self.sendToTheta(-1.20)
-	    self.sendToTheta(-0.623599)
+            self.sendToTheta(-0.623599)
         else:
             self.sendToTheta(-1.20)
-	    self.sendToTheta(0)
+            self.sendToTheta(0)
             self.sendToTheta(0.623599)
 
     #============================= Joint Angle Control =======================================
