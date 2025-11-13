@@ -126,8 +126,10 @@ class Joint:
         # #======= Step 3 - reset homed joint to 0 radians =======
         print("{} calibrated!".format(self._qID))
         if convex:
+            self.sendToTheta(-0.311799)
             self.sendToTheta(-0.623599)
         else:
+            self.sendToTheta(0.311799)
             self.sendToTheta(0.623599)
 
     #============================= Joint Angle Control =======================================
