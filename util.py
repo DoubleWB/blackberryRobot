@@ -28,7 +28,8 @@ class MotorConfig:
 
 def getArmConfiguration():
     """Get arm configuration from the local config file and unpack it into a dataclass"""
-    with open('config.yml', 'r') as file:
+    fileName = 'config.yml'
+    with open(fileName, 'r') as file:
         rawConfig = yaml.safe_load(file)
         newConfig = copy.deepcopy(rawConfig)
         #Marshal rawConfig into MotorConfig dataclasses
@@ -43,6 +44,38 @@ def getArmConfiguration():
         newConfig['arm']['gripper']['motor'] = MotorConfig(rawMotorConfig['id'], rawMotorConfig['zeroPos'], rawMotorConfig['radsPerPos'], rawMotorConfig['p'], rawMotorConfig['i'], rawMotorConfig['d'], rawMotorConfig['ff2'], rawMotorConfig['ff1'])
 
         return newConfig
+    
+def showPoseNamesFromFile(poseName):
+    """Reads and displays the names of the poses in the local poses file"""
+    fileName = 'poses.yml'
+    posesDict = {}
+    with open(fileName, 'r') as file:
+        print('Saved poses: ')
+        posesDict = yaml.safe_load(file)
+        for poseName in posesDict:
+            print(poseName)
+
+def readPoseFromFile(poseName):
+    """Read the saved set of q angles associated with the given pose name from the local poses file, and None if it doesn't exist"""
+    fileName = 'poses.yml'
+    posesDict = {}
+    with open(fileName, 'r') as file:
+        posesDict = yaml.safe_load(file)
+        if poseName in posesDict:
+            return posesDict
+        return None
+    
+def savePoseToFile(q, poseName):
+    """Write the given set of q angles to the local poses file under the given pose name"""
+    fileName = 'poses.yml'
+    posesDict = {}
+    with open(fileName, 'r') as file:
+        posesDict = yaml.safe_load(file)
+    if posesDict:
+        if (len(q) == 6):
+            posesDict[poseName] = q
+            with open(fileName, 'w') as file:
+                yaml.dump(posesDict, file, default_flow_style=False, sort_keys=False)
 
 def handleCommResponse(comm_result, command_string, packetHandler, verbose = False):
     """Handle the repeated logic of checking the result of a dynamixel communication, and printing success/failure with the given command string. Also returns True when the communication was successful."""

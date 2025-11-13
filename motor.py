@@ -32,9 +32,8 @@ TORQUE_DISABLE              = 0     # Value for disabling the torque
 class DynamixelMotor:
     #============================= Motor Constants ==================================
     
-    #Max position on a dynamixel before looping back to 0
-    _vel_time_profile = 2000
-    _acc_time_profile = 500
+    _vel_time_profile = 1000 #ms
+    _acc_time_profile = 250 #ms
     _pos_epsilon = 35 #~3 Degrees 
     _load_threshold = 400 #40%
     _polling_delay = 0.050

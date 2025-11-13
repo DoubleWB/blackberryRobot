@@ -208,7 +208,7 @@ class Gripper:
         """Adds and sends a new position calculated from the given gripper open/close percentage"""
         gripMotorPos = self.gripPosToMotorPos(gripVal)
         if self.withinLimits(gripMotorPos):
-            self._motor.sendMotorPosition(gripMotorPos)
+            self._motor.safeSendMotorPosition(gripMotorPos)
         else:
             print('Cannot send gripper to out of bounds theta: {}'.format(gripMotorPos))
 

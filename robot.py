@@ -222,6 +222,27 @@ class Blackberry:
         """Adds and sends a gripper command based on the given gripper percentage"""
         self._gripper.sendGripperPostion(gripVal)
 
+    #============================= Pose Teaching and Control ==================================
+    def savePose(self):
+        """Runs a routine through which the user can manually pose the robot and save the pose."""
+        print('Cutting torque in...')
+        delay = 3
+        for i in range(delay):
+            print('{}...'.format(delay - i))
+            time.sleep(1)
+        self.toggleActivate(False)
+        input('Hit enter to accept pose!')
+        self.toggleActivate(True)
+        poseQ = self.readAllJointAngles()
+        poseName = input('Enter pose nane: ')
+        util.savePoseToFile(poseQ, poseName)
+
+    def goToSavedPose(self, poseName):
+        """Reads the given pose from the local pose file and moves to that pose if present"""
+        q = util.readPoseFromFile(poseName)
+        if q:
+            self.setJointAngles(q)
+
     #============================= Kinematics ==================================
     def getFK(self):
         """Return a 1x6 matrix of the functions to calculate [x, y, z, yaw, pitch, roll] given q"""
