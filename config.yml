@@ -54,10 +54,10 @@ arm:
       motors:
         - id: 6
           p: 3600
-          i: 0
-          d: 640
-          ff2: 0
-          ff1: 0
+          i: 7000
+          d: 2000
+          ff2: 2000
+          ff1: 3000
           zeroPos: 2048
           radsPerPos: 0.00153398193
     # Joint 4 (Wrist Flexion)
