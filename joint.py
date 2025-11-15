@@ -10,7 +10,7 @@ class Joint:
     
     _homing_load_threshold = 200 #10%
     _homing_advance_rate = 25 #Starting careful
-    _homing_physical_limit = -2.02458193
+    _homing_physical_limit = -2.0944
 
     #============================= Joint Construction ==================================
     def __init__(self, qID, transform, jointLimits, motorParameters, portHandler, packetHandler, groupBulkWrite, groupSyncReadPos, groupSyncReadLoad, errorCallback, useHardware):
