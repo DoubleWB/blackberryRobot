@@ -36,8 +36,7 @@ class DynamixelMotor:
     _acc_time_profile = 750 #ms
     _pos_epsilon = 35 #~3 Degrees
     _load_threshold = 400 #40%
-    _polling_delay = 0.050
-    _movement_time_limit = 2
+
 
     #============================= DynamixelMotor Construction ==================================
     def __init__(self, tuningParameters, portHandler, packetHandler, groupBulkWrite, groupSyncReadPos, groupSyncReadLoad, errorCallback):
@@ -201,7 +200,7 @@ class DynamixelMotor:
         moving, underLoadThresh = self.fetchAndGetMotorMovementStatus()
         polls = 0
         #If enough polls elapse to cover the _movement_time_limit and no other issues have occured, we might have trouble reaching this pose for config reasons
-        while moving and polls < self._movement_time_limit/self._polling_delay:
+        while moving and polls < util.MOVEMENT_TIME_LIMIT/util.POLLING_DELAY:
             if not underLoadThresh:
                 self._errorCallback.__call__()
             time.sleep(util.POLLING_DELAY)

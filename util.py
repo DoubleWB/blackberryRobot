@@ -6,6 +6,7 @@ import math
 from sympy import Matrix
 
 POLLING_DELAY = 0.050
+MOVEMENT_TIME_LIMIT = 2.5
 
 class MotorConfig:
     def __init__(self, id, zeroPos, radsPerPos = 0.00153398193, p = 640, i = 0, d = 3600, ff2 = 0, ff1 = 0):

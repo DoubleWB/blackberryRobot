@@ -170,7 +170,9 @@ class Blackberry:
         
         #Monitor for safety and block until the angles are achieved
         anglesAchieved = False
-        while not anglesAchieved:
+        polls = 0
+        #If enough polls elapse to cover the _movement_time_limit and no other issues have occured, we might have trouble reaching this pose for config reasons
+        while not anglesAchieved and polls < util.MOVEMENT_TIME_LIMIT/util.POLLING_DELAY:
             anglesAchieved = True
             dxl_comm_result = self._groupSyncReadPos.txRxPacket()
             readSuccess = util.handleCommResponse(dxl_comm_result, 'Robot status (position) read', self._packetHandler)
@@ -187,6 +189,7 @@ class Blackberry:
                 #we can't break early because we still want to check the load of each joint
                 anglesAchieved = anglesAchieved and not jointMoving
             time.sleep(util.POLLING_DELAY)
+            polls += 1
 
     def setIndividualJointAngles(self, q):
         """Adds and sends commands to each motor one at a time given an array of joint angles"""

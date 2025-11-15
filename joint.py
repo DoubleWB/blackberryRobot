@@ -10,7 +10,7 @@ class Joint:
     
     _homing_load_threshold = 200 #10%
     _homing_advance_rate = 25 #Starting careful
-    _homing_physical_limit = -1.91986
+    _homing_physical_limit = -1.88496
 
     #============================= Joint Construction ==================================
     def __init__(self, qID, transform, jointLimits, motorParameters, portHandler, packetHandler, groupBulkWrite, groupSyncReadPos, groupSyncReadLoad, errorCallback, useHardware):
@@ -157,12 +157,15 @@ class Joint:
             #Monitor
             jointMoving = True
             jointUnderLoadThresh = True
-            while jointMoving:
+            polls = 0
+            #If enough polls elapse to cover the _movement_time_limit and no other issues have occured, we might have trouble reaching this pose for config reasons
+            while jointMoving and polls < util.MOVEMENT_TIME_LIMIT/util.POLLING_DELAY:
                 if not jointUnderLoadThresh:
                     self._errorCallback.__call__()
                     return
                 time.sleep(util.POLLING_DELAY)
                 jointMoving, jointUnderLoadThresh = self.fetchAndGetJointMovementStatus()
+                polls += 1 
         else:
             print('Cannot send joint {} to out of bounds theta: {}'.format(self._qID, theta))
 
