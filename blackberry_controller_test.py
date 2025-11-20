@@ -64,7 +64,7 @@ def traceCircleTest(bb, xCenter, yCenter, zCenter, radius):
     bb.toggleActivate(False)
 
 if __name__ == '__main__':
-    bb = rob.Blackberry(useHardware=False, startWithTorque=False)
+    bb = rob.Blackberry(useHardware=True, startWithTorque=True)
     np.set_printoptions(suppress=True)
     while True:
         #idleThread = threading.Thread(target = animateIdle, args = (bb, ))
