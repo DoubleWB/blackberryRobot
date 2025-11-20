@@ -151,7 +151,8 @@ class Joint:
             for _, motor in enumerate(self._motors):
                 newPos = motor.posFromRad(theta)
                 motor.addMotorPosition(newPos)
-                print('Setting {} to angle {}'.format(self._qID, theta))
+                #Commenting out for being too verbose for now
+                #print('Setting {} to angle {}'.format(self._qID, theta))
             #Send positions
             util.sendAndClearBulkWrite('Sending Joint Command for: {}'.format(self._qID), self._groupBulkWrite, self._packetHandler)
             #Monitor

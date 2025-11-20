@@ -7,6 +7,8 @@ from sympy import Matrix
 
 POLLING_DELAY = 0.050
 MOVEMENT_TIME_LIMIT = 2.5
+CONFIG_FILE_NAME = 'config.yml'
+POSE_FILE_NAME = 'poses.yml'
 
 class MotorConfig:
     def __init__(self, id, zeroPos, radsPerPos = 0.00153398193, p = 640, i = 0, d = 3600, ff2 = 0, ff1 = 0):
@@ -29,8 +31,7 @@ class MotorConfig:
 
 def getArmConfiguration():
     """Get arm configuration from the local config file and unpack it into a dataclass"""
-    fileName = 'config.yml'
-    with open(fileName, 'r') as file:
+    with open(CONFIG_FILE_NAME, 'r') as file:
         rawConfig = yaml.safe_load(file)
         newConfig = copy.deepcopy(rawConfig)
         #Marshal rawConfig into MotorConfig dataclasses
@@ -46,37 +47,34 @@ def getArmConfiguration():
 
         return newConfig
     
-def showPoseNamesFromFile(poseName):
+def showPoseNamesFromFile():
     """Reads and displays the names of the poses in the local poses file"""
-    fileName = 'poses.yml'
-    posesDict = {}
-    with open(fileName, 'r') as file:
+    with open(POSE_FILE_NAME, 'r') as file:
         print('Saved poses: ')
-        posesDict = yaml.safe_load(file)
-        for poseName in posesDict:
-            print(poseName)
+        posesRaw = yaml.safe_load(file)
+        for pose in posesRaw['poses']:
+            print(pose['poseName'])
 
 def readPoseFromFile(poseName):
     """Read the saved set of q angles associated with the given pose name from the local poses file, and None if it doesn't exist"""
-    fileName = 'poses.yml'
-    posesDict = {}
-    with open(fileName, 'r') as file:
-        posesDict = yaml.safe_load(file)
-        if poseName in posesDict:
-            return posesDict
+    with open(POSE_FILE_NAME, 'r') as file:
+        posesRaw = yaml.safe_load(file)
+        for pose in posesRaw['poses']:
+            if pose['poseName'] == poseName:
+                return pose['q']
         return None
     
 def savePoseToFile(q, poseName):
     """Write the given set of q angles to the local poses file under the given pose name"""
-    fileName = 'poses.yml'
-    posesDict = {}
-    with open(fileName, 'r') as file:
-        posesDict = yaml.safe_load(file)
-    if posesDict:
-        if (len(q) == 6):
-            posesDict[poseName] = q
-            with open(fileName, 'w') as file:
-                yaml.dump(posesDict, file, default_flow_style=False, sort_keys=False)
+    posesRaw = {}
+    with open(POSE_FILE_NAME, 'r') as file:
+        posesRaw = yaml.safe_load(file)
+    if (len(q) == 6):
+        allPoses = posesRaw['poses']
+        newPose = {'poseName': poseName, 'q': q}
+        allPoses.append(newPose)
+        with open(POSE_FILE_NAME, 'w') as file:
+            yaml.dump(posesRaw, file, default_flow_style=False, sort_keys=False)
 
 def handleCommResponse(comm_result, command_string, packetHandler, verbose = False):
     """Handle the repeated logic of checking the result of a dynamixel communication, and printing success/failure with the given command string. Also returns True when the communication was successful."""
