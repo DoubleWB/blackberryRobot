@@ -140,7 +140,8 @@ class Joint:
             for _, motor in enumerate(self._motors):
                 newPos = motor.posFromRad(theta)
                 motor.addMotorPosition(newPos)
-                print('Setting {} to angle {}'.format(self._qID, theta))
+                #Commenting out for being too verbose for now
+                #print('Setting {} to angle {}'.format(self._qID, theta))
         else:
             print('Cannot set joint {} to out of bounds theta: {}'.format(self._qID, theta))
 

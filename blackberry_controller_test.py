@@ -14,9 +14,9 @@ pause_idle = threading.Event()
 
 def animateIdle(bb):
     """Test routine moving the robot from demo pose to demo pose over random long intervals - intended to be run in a separate thread."""
-    minWaitTime = 180 #3 Minutes
-    maxWaitTime = 600 #10 Minutes
-    idlePoseNames = ['zeroes']
+    minWaitTime = 30
+    maxWaitTime = 60 
+    idlePoseNames = ['look1', 'look2', 'look3', 'look4', 'look5']
     lastPoseName = ''
     while(not pause_idle.is_set()):
         waitRange = maxWaitTime - minWaitTime
@@ -67,8 +67,8 @@ if __name__ == '__main__':
     bb = rob.Blackberry(useHardware=True, startWithTorque=True)
     np.set_printoptions(suppress=True)
     while True:
-        #idleThread = threading.Thread(target = animateIdle, args = (bb, ))
-        #idleThread.start()
+        idleThread = threading.Thread(target = animateIdle, args = (bb, ))
+        idleThread.start()
         print('Blackberry is currently idling, please input one of the following:')
         print('1: Input goal pose!')
         print('2: Teach pose kinesthetically!')
@@ -77,7 +77,7 @@ if __name__ == '__main__':
         print('5: Trace a circle in the Y/Z plane!')
         selection = int(input('Input selection: '))
         pause_idle.set()
-        #idleThread.join()
+        idleThread.join()
         if selection == 1:
             inputBasedTest(bb)
             os.system('cls' if os.name == 'nt' else 'clear')
