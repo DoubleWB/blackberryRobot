@@ -14,8 +14,8 @@ pause_idle = threading.Event()
 
 def animateIdle(bb):
     """Test routine moving the robot from demo pose to demo pose over random long intervals - intended to be run in a separate thread."""
-    minWaitTime = 30
-    maxWaitTime = 60 
+    minWaitTime = 15
+    maxWaitTime = 30 
     idlePoseNames = ['look1', 'look2', 'look3', 'look4', 'look5']
     lastPoseName = ''
     while(not pause_idle.is_set()):

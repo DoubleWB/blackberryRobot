@@ -35,7 +35,7 @@ class DynamixelMotor:
     _vel_time_profile = 1200 #ms
     _acc_time_profile = 750 #ms
     _pos_epsilon = 35 #~3 Degrees
-    _load_threshold = 400 #40%
+    _load_threshold = 500 #50%
 
 
     #============================= DynamixelMotor Construction ==================================
